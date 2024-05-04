@@ -57,7 +57,7 @@ static const char LIBGL_SO[] = "libGL.so";
 #ifndef GLHOOKER_NO_LOG
 #define GLHOOKER_SYSCALLERROR(FUNC,FMT){fprintf(stderr,FMT);fprintf(stderr," %s(): %s \n", #FUNC, strerror(errno));}
 #define GLHOOKER_SYSCALLERRORV(FUNC,FMT, ...){fprintf(stderr,FMT,__VA_ARGS__);fprintf(stderr," %s() : %s\n", #FUNC, strerror(errno));}
-#define GLHOOKER_ERROR(FMT, ...){fprintf(stderr," GLHooker::Error: %s\n",__VA_ARGS__);}
+#define GLHOOKER_ERROR(FMT, ...){fprintf(stderr,FMT,__VA_ARGS__);}
 #else
 #define FATAL_ERROR()
 #endif
@@ -72,9 +72,6 @@ glhooker_init(void)
     
     gl_hooker.hooks = NULL;
     gl_hooker.num_hooks = 0;
-
-    fprintf(stderr,"Initializing GLHooker\n");
-
     if((gl_hooker.libgl = dlopen(LIBGL_SO, RTLD_LAZY | RTLD_NODELETE)) == NULL)
     {
         GLHOOKER_SYSCALLERRORV(dlopen, "Could not open %s:", LIBGL_SO);
@@ -132,19 +129,16 @@ glhooker_getoriginalname(void* addr)
 bool 
 glhooker_registerhook(const GLHookerRegisterHookDesc* desc)
 {
+    
+    
+    if(gl_hooker.hooks == NULL)
+    {
+        return false;
+    }
     if(desc->dst_func == NULL)
     {
         return false;
     }
-    if(desc->src_func_name[0] == '\0')
-    {
-        fprintf(stdout,"Registering hook for [ALL]. Address: %p. Type:%d.\n", desc->dst_func,desc->hook_type);
-    }
-    else 
-    {
-        fprintf(stdout,"Registering hook for %s. Address: %p. Type:%d.\n", desc->src_func_name, desc->dst_func,desc->hook_type);
-    }
-
     add_hook(NULL,desc->dst_func, desc->src_func_name,desc->hook_type);
     return true;
 }
@@ -199,11 +193,12 @@ static void*
 getprocaddress(const GLubyte* proc)
 {
     long pagesize = sysconf(_SC_PAGE_SIZE);
+
     void* proc_address = dlsym(gl_hooker.libgl, (const char*) proc);
 
     if(proc_address == NULL)
     {
-        GLHOOKER_SYSCALLERRORV(dlsym, "Could not get original OpenGL function: %s", proc);
+        GLHOOKER_ERROR("Could not get original OpenGL function: %s: %s", proc, dlerror());
         return NULL;
     }
 
@@ -232,7 +227,7 @@ getprocaddress(const GLubyte* proc)
         return proc_address;
     }
 
-    fprintf(stdout,"Installing hook on: %s\n", hook->name);
+    
     memcpy(&hook->src, &proc_address, sizeof(void*));
 
     if(hook->hook_type == GLHOOK_INLINE)
@@ -253,7 +248,7 @@ getprocaddress(const GLubyte* proc)
     char* page = relay_func;
     hook->relay_addr = relay_func;
     page = (char*) ((size_t)page & ~(pagesize - 1));
-    fprintf(stdout,"Redirecting %s to %p. Original address: %p\n", proc,relay_func,proc_address);
+    
 
     return relay_func;
 hook_install_fail:
