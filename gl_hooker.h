@@ -20,6 +20,7 @@ typedef struct
 bool glhooker_init(void);
 inline char* glhooker_getoriginalname(void*);
 bool glhooker_registerhook(const GLHookerRegisterHookDesc*);
+void* glhooker_getoriginalfunction(void);
 
 #define GLHOOKER_GETHOOKADDR() (__builtin_return_address(0) - 0x2e)
 

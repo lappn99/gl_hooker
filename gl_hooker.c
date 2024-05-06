@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dlfcn.h>
@@ -42,12 +43,11 @@ typedef struct GLHooker
     Hook* hooks;
     size_t num_hooks;
     void* libgl;
-
 } GLHooker;
 
 static bool install_inline_hook(void*, void*);
 static void* getprocaddress(const GLubyte*);
-static void* generate_relay_function(void*, void*, long);
+static void* generate_relay_function(void*, void*);
 static void add_hook(void* addr, void* dest, const char* name, GLHookerHookType type);
 
 static GLHooker gl_hooker;
@@ -64,6 +64,8 @@ static const char LIBGL_SO[] = "libGL.so";
 
 typedef void* (*GLGetProcAddress)(GLubyte*) ;
 
+
+static void* actual_function;
 
 
 bool
@@ -143,6 +145,12 @@ glhooker_registerhook(const GLHookerRegisterHookDesc* desc)
     return true;
 }
 
+void* 
+glhooker_getoriginalfunction(void)
+{
+    return actual_function;
+}
+
 static void 
 add_hook(void* addr, void* dest, const char* name, GLHookerHookType type)
 {
@@ -166,7 +174,6 @@ add_hook(void* addr, void* dest, const char* name, GLHookerHookType type)
 static bool
 install_inline_hook(void* src, void* dst)
 {
-  
     long pagesize = sysconf(_SC_PAGE_SIZE);
     char jmp[] = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     memcpy(&jmp[6], &dst, sizeof(void*));
@@ -195,7 +202,7 @@ getprocaddress(const GLubyte* proc)
     long pagesize = sysconf(_SC_PAGE_SIZE);
 
     void* proc_address = dlsym(gl_hooker.libgl, (const char*) proc);
-
+    
     if(proc_address == NULL)
     {
         GLHOOKER_ERROR("Could not get original OpenGL function: %s: %s", proc, dlerror());
@@ -226,24 +233,17 @@ getprocaddress(const GLubyte* proc)
     {
         return proc_address;
     }
-
+    
     
     memcpy(&hook->src, &proc_address, sizeof(void*));
 
-    if(hook->hook_type == GLHOOK_INLINE)
-    {
-        hook->relay_addr = NULL;
-        if(!install_inline_hook(hook->src, hook->dest))
-        {
-            GLHOOKER_ERROR("Could not install inline hook on: %s", proc);
-        }
-        return proc_address;
-    }
-    void* relay_func = generate_relay_function(proc_address,hook->dest,pagesize);
+    
+    void* relay_func = generate_relay_function(proc_address,hook->dest);
     if(relay_func == NULL)
     {
         goto hook_install_fail;
     }
+   
 
     char* page = relay_func;
     hook->relay_addr = relay_func;
@@ -262,22 +262,23 @@ hook_install_fail:
 
 //Very cursed
 static void* 
-generate_relay_function(void* src, void* dst, long pagesize)
+generate_relay_function(void* src, void* dst)
 {   
-    char save_args[] = {0x49, 0xBB, 0xA0, 0x16, 0xB6, 0xF7, 0xFF, 0x7F, 0x00, 0x00, 0x49, 0x89, 0x3B, 0x49, 0x89, 0x73, 0x08, 0x49, 0x89, 0x53, 0x10, 0x49, 0x89, 0x4B, 0x18, 0x4D, 0x89, 0x43, 0x20, 0x4D, 0x89, 0x4B, 0x28};
+    //char save_args[] = {0x49, 0xBB, 0xA0, 0x16, 0xB6, 0xF7, 0xFF, 0x7F, 0x00, 0x00, 0x49, 0x89, 0x3B, 0x49, 0x89, 0x73, 0x08, 0x49, 0x89, 0x53, 0x10, 0x49, 0x89, 0x4B, 0x18, 0x4D, 0x89, 0x43, 0x20, 0x4D, 0x89, 0x4B, 0x28};
+    
     
     char absolute_jump[] = {
-        
-        0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //mov r10, addr
-        0x41, 0xFF, 0xD2, //Call
-        0x49, 0xBB, 0xA0, 0x16, 0xB6, 0xF7, 0xFF, 0x7F, 0x00, 0x00, 0x49, 0x8B, 0x3B, 0x49, 0x8B, 0x73, 0x08, 0x49, 0x8B, 0x53, 0x10, 0x49, 0x8B, 0x4B, 0x18, 0x4D, 0x8B, 0x43, 0x20, 0x4D, 0x8B, 0x4B, 0x28, 
         0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x41, 0xFF, 0xE2,
-
+        0x49, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x4D, 0x89, 0x13,
+        0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //mov r10, addr
+        0x41, 0xFF, 0xE2, //Jump
+        0xC3
     };
 
-    char data[sizeof(save_args) + sizeof(absolute_jump)] = {0x90};
-    char* func = mmap(NULL, sizeof(data) + sizeof(void*) * 9, PROT_EXEC | PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    char data[sizeof(absolute_jump)];
+    memset(&data[0], 0x90, sizeof(data));
+    char* func = mmap(NULL, sizeof(data), PROT_EXEC | PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     if(func == MAP_FAILED)
     {
@@ -285,14 +286,14 @@ generate_relay_function(void* src, void* dst, long pagesize)
         return NULL;
     }
 
-    void* stack_address = func + sizeof(data);
-    memcpy(&absolute_jump[2], &dst,sizeof(void*));
-    memcpy(&absolute_jump[33 + 13 + 2],&src,sizeof(void*));
-    memcpy(&absolute_jump[13 + 2], &stack_address,sizeof(void*));
-    memcpy(&save_args[2], &stack_address, sizeof(void*));
-    memcpy(&data[0],&save_args[0],sizeof(save_args));
-    memcpy(&data[sizeof(save_args)], &absolute_jump[0],sizeof(absolute_jump));
-    memcpy(func, data,sizeof(data));
+    actual_function = src;
+    void* actual_func_address = &actual_function;
+    memcpy(&absolute_jump[2], &src, sizeof(void*));
+    memcpy(&absolute_jump[10 + 2], &actual_func_address,sizeof(void*));
+    memcpy(&absolute_jump[23 + 2], &dst,sizeof(void*));
+    memcpy(data, absolute_jump, sizeof(absolute_jump));
+    memcpy(func,data,sizeof(data));
+    
     
     return func;
 
