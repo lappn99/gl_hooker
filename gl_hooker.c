@@ -36,6 +36,9 @@ typedef struct Hook
     char name[64];
     GLHookerHookType hook_type;
 
+    size_t userdata_size;
+    void* userdata;
+
 } Hook;
 
 typedef struct GLHooker
@@ -48,7 +51,7 @@ typedef struct GLHooker
 static bool install_inline_hook(void*, void*);
 static void* getprocaddress(const GLubyte*);
 static void* generate_relay_function(void*, void*);
-static void add_hook(void* addr, void* dest, const char* name, GLHookerHookType type);
+static void add_hook(void* addr, void* dest, const char* name, GLHookerHookType type, size_t, void*);
 
 static GLHooker gl_hooker;
 
@@ -62,7 +65,7 @@ static const char LIBGL_SO[] = "libGL.so";
 #define FATAL_ERROR()
 #endif
 
-typedef void* (*GLGetProcAddress)(GLubyte*) ;
+typedef void* (*GLGetProcAddress)(GLubyte*);
 
 
 static void* actual_function;
@@ -115,17 +118,14 @@ glhooker_init(void)
 
 
 char* 
-glhooker_getoriginalname(void* addr)
+glhooker_gethookname(HookHandle handle)
 {
-    for(int i = 0; i < gl_hooker.num_hooks; i++)
+    if(handle == NULL)
     {
-        
-        if(gl_hooker.hooks[i].relay_addr == addr)
-        {
-            return &gl_hooker.hooks[i].name[0];
-        }
+        return NULL;
     }
-    return NULL;
+    return handle->name;
+    
 }
 
 bool 
@@ -141,18 +141,45 @@ glhooker_registerhook(const GLHookerRegisterHookDesc* desc)
     {
         return false;
     }
-    add_hook(NULL,desc->dst_func, desc->src_func_name,desc->hook_type);
+    add_hook(NULL,desc->dst_func, desc->src_func_name,desc->hook_type,desc->userdata_size, desc->userdata);
     return true;
 }
 
 void* 
-glhooker_getoriginalfunction(void)
+glhooker_getoriginalfunction(HookHandle handle)
 {
-    return actual_function;
+    if(handle == NULL)
+    {
+        return NULL;
+    }
+    return handle->src;
+}
+
+void* 
+glhooker_gethookuserdata(HookHandle handle)
+{
+    if(handle == NULL)
+    {
+        return NULL;
+    }
+    return handle->userdata;
+}
+
+HookHandle 
+glhooker_gethook(const char* name)
+{
+    for(int i = 0; i < gl_hooker.num_hooks; i++)
+    {
+        if(strcmp(gl_hooker.hooks[i].name,name) == 0)
+        {
+            return &gl_hooker.hooks[i];
+        }
+    }
+    return NULL;
 }
 
 static void 
-add_hook(void* addr, void* dest, const char* name, GLHookerHookType type)
+add_hook(void* addr, void* dest, const char* name, GLHookerHookType type, size_t userdata_size, void* userdata)
 {
     
     gl_hooker.num_hooks++;
@@ -168,6 +195,9 @@ add_hook(void* addr, void* dest, const char* name, GLHookerHookType type)
     
     memcpy(&gl_hooker.hooks[gl_hooker.num_hooks - 1].src, &addr, sizeof(void*));
     memcpy(&gl_hooker.hooks[gl_hooker.num_hooks - 1].dest,&dest,sizeof(void*));
+    gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata_size = userdata_size;
+    gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata = calloc(1, userdata_size);
+    memcpy(gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata, userdata, userdata_size);
     gl_hooker.hooks[gl_hooker.num_hooks - 1].hook_type = type;
 }
 
@@ -217,7 +247,7 @@ getprocaddress(const GLubyte* proc)
         hook = &gl_hooker.hooks[i];
         if(strlen(gl_hooker.hooks[i].name) == 0)
         {
-            add_hook(proc_address,gl_hooker.hooks[i].dest,(const char*) proc,gl_hooker.hooks[i].hook_type);
+            add_hook(proc_address,gl_hooker.hooks[i].dest,(const char*) proc,gl_hooker.hooks[i].hook_type,hook->userdata_size, hook->userdata);
             hook = &gl_hooker.hooks[gl_hooker.num_hooks - 1];
             break;
         }
@@ -288,13 +318,13 @@ generate_relay_function(void* src, void* dst)
 
     actual_function = src;
     void* actual_func_address = &actual_function;
+
     memcpy(&absolute_jump[2], &src, sizeof(void*));
     memcpy(&absolute_jump[10 + 2], &actual_func_address,sizeof(void*));
     memcpy(&absolute_jump[23 + 2], &dst,sizeof(void*));
     memcpy(data, absolute_jump, sizeof(absolute_jump));
     memcpy(func,data,sizeof(data));
-    
-    
+
     return func;
 
 }
