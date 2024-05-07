@@ -18,20 +18,15 @@ The more detailed process for this is as follows:
     2. Return the address of the `relay` function to the user.
 4. When `proc` is called it invokes our relay function which then in turn jumps to the hook function.
 
-[^1]: An inline hook is one where the actual bytes of the target function are overwritten to jump to the hook. 
-
-Typically the start of a function is this:
-
+[^1]: An inline hook is one where the actual bytes of the target function are overwritten to jump to the hook. \
+Typically the start of a function is this:\
 `push rbp`\
 `mov rpb, rps`\
 `<pop args off stack>`\
-`<rest of function>`
-
-After installing the hook it might look something like this:
-
+`<rest of function>`\
+After installing the hook it might look something like this:\
 `jmpabs 0x7444453399a3c2d6`\
-`<rest of function>`
-
+`<rest of function>`\
 So the original function is completely destroyed, and yes I am just as surprised as you that you are allowed to do this `hint: mprotect()`. It *may* seem easy to perseve the original function, by just exectuing the overwritten instructions after execution of the hook function, but you have to account for the fact that you maybe an instruction was cut in half when you copied in the inline hook, so now you have to account for that, which then means you have to import an dissassembler library and all that crap. No thanks. This is the one time im glad that OpenGL does things so fucked up. I should note that yes, `glXGetProcAddress[ARB]` are, infact, destroyed by inlining the hook for those, but thats okay as my previous assumption I mentioned about them turned out to be true, so we are just implementing our own versions for those ones and theres no real reason to perseve the original function(s). The actual OpenGL functions however we *do* want to perserve.
 
 
