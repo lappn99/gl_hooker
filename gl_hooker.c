@@ -34,7 +34,6 @@ typedef struct Hook
     void* dest;
     void* relay_addr;
     char name[64];
-    GLHookerHookType hook_type;
 
     size_t userdata_size;
     void* userdata;
@@ -51,7 +50,7 @@ typedef struct GLHooker
 static bool install_inline_hook(void*, void*);
 static void* getprocaddress(const GLubyte*);
 static void* generate_relay_function(void*, void*);
-static void add_hook(void* addr, void* dest, const char* name, GLHookerHookType type, size_t, void*);
+static void add_hook(void* addr, void* dest, const char* name, size_t, void*);
 
 static GLHooker gl_hooker;
 
@@ -102,7 +101,6 @@ glhooker_init(void)
             strcpy(&gl_hooker.hooks[i].name[0], "glXGetProcAddress");
             memcpy(&gl_hooker.hooks[i].dest, &getprocaddress,sizeof(void*));
             memcpy(&gl_hooker.hooks[i].src, &get_proc_address_funcs[i], sizeof(void*));
-            gl_hooker.hooks[i].hook_type = GLHOOK_INLINE;
             
 
         }
@@ -141,7 +139,7 @@ glhooker_registerhook(const GLHookerRegisterHookDesc* desc)
     {
         return false;
     }
-    add_hook(NULL,desc->dst_func, desc->src_func_name,desc->hook_type,desc->userdata_size, desc->userdata);
+    add_hook(NULL,desc->dst_func, desc->src_func_name,desc->userdata_size, desc->userdata);
     return true;
 }
 
@@ -179,7 +177,7 @@ glhooker_gethook(const char* name)
 }
 
 static void 
-add_hook(void* addr, void* dest, const char* name, GLHookerHookType type, size_t userdata_size, void* userdata)
+add_hook(void* addr, void* dest, const char* name, size_t userdata_size, void* userdata)
 {
     
     gl_hooker.num_hooks++;
@@ -198,7 +196,6 @@ add_hook(void* addr, void* dest, const char* name, GLHookerHookType type, size_t
     gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata_size = userdata_size;
     gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata = calloc(1, userdata_size);
     memcpy(gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata, userdata, userdata_size);
-    gl_hooker.hooks[gl_hooker.num_hooks - 1].hook_type = type;
 }
 
 static bool
@@ -247,7 +244,7 @@ getprocaddress(const GLubyte* proc)
         hook = &gl_hooker.hooks[i];
         if(strlen(gl_hooker.hooks[i].name) == 0)
         {
-            add_hook(proc_address,gl_hooker.hooks[i].dest,(const char*) proc,gl_hooker.hooks[i].hook_type,hook->userdata_size, hook->userdata);
+            add_hook(proc_address,gl_hooker.hooks[i].dest,(const char*) proc,hook->userdata_size, hook->userdata);
             hook = &gl_hooker.hooks[gl_hooker.num_hooks - 1];
             break;
         }

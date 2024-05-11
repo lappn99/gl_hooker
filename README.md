@@ -7,7 +7,7 @@ This library provides mechanisms to hook into OpenGL function calls while and le
 
 ## How it works
 
-This library exploits the unique way in which OpenGL 1.1+ functions are loaded into (most) applications. Under the hood what OpenGL function loader libraries like `GLAD` do is get the address of OpenGL functions from a shared library and assign them to function pointers. Using one of `glXGetProcAddress`, or `glXGetProcAddressARB` (Khronos doesn't even know which one you should use). I dont exactly know what specifically the *implementation* of these do however I imagine it is something similiar to how you normally would do something like this: with functions like `dlopen`, and `dlsym`; to open a shared library and get the address of a symbol respectively. Using this assumption this library hooks into these functions and instead of returning the address of the *actual* function: the address of the hook function is effectively returned instead (see below for more details). Normally to do a hook like this, such as a `trampoline` hook, complicated assembly-foo is needed so that the original function is left intact and can still operate normally before (or after) the hook executes. By exploiting how OpenGL functions are loaded, this makes this *a lot* easier, it also means that it only works for OpenGL however.
+This library exploits the unique way in which OpenGL 1.1+ functions are loaded into (most) applications. Under the hood what OpenGL function loader libraries like `GLAD` do is get the address of OpenGL functions from a shared library and assign them to function pointers. Using one of `glXGetProcAddress`, or `glXGetProcAddressARB` ([Khronos doesn't even know which one you should use](https://www.khronos.org/opengl/wiki/Load_OpenGL_Functions#Linux_and_X-Windows)). I dont exactly know what specifically the *implementation* of these do however I imagine it is something similiar to how you normally would do something like this: with functions like `dlopen`, and `dlsym`; to open a shared library and get the address of a symbol respectively. Using this assumption this library hooks into these functions and instead of returning the address of the *actual* function: the address of the hook function is effectively returned instead (see below for more details). Normally to do a hook like this, such as a `trampoline` hook, complicated assembly-foo is needed so that the original function is left intact and can still operate normally before (or after) the hook executes. By exploiting how OpenGL functions are loaded, this makes this *a lot* easier, it also means that it only works for OpenGL however.
 
 The more detailed process for this is as follows:
 
@@ -22,8 +22,10 @@ The more detailed process for this is as follows:
 ## Use
 If you wish to use this library for your own purposes, here is a quick example:
 
+> **_NOTE:_** Only for Linux-x64_86
 
 > **_NOTE:_** This library was explicitly used for the purposes of [gltrace](https://github.com/lappn99/gltrace_rs). Check it out!
+
 
 ```
 

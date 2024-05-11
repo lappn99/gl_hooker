@@ -7,15 +7,8 @@
 struct Hook;
 typedef struct Hook* HookHandle;
 
-typedef enum
-{
-    GLHOOK_INLINE,
-    GLHOOK_INTERCEPT
-} GLHookerHookType;
-
 typedef struct 
 {
-    GLHookerHookType hook_type;
     char src_func_name[64];
     void* dst_func;
     size_t userdata_size;
