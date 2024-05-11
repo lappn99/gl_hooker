@@ -34,7 +34,6 @@ typedef struct Hook
     void* dest;
     void* relay_addr;
     char name[64];
-
     size_t userdata_size;
     void* userdata;
 
@@ -64,10 +63,9 @@ static const char LIBGL_SO[] = "libGL.so";
 #define FATAL_ERROR()
 #endif
 
+//Catch-all type for glXGetProcAddress[ARB]
 typedef void* (*GLGetProcAddress)(GLubyte*);
 
-
-static void* actual_function;
 
 
 bool
@@ -82,6 +80,7 @@ glhooker_init(void)
         return false;
     }
 
+    //Need to hook both loader funcs as different libraries will use different ones
     GLGetProcAddress get_proc_address_funcs[2] = {
         dlsym(gl_hooker.libgl,"glXGetProcAddressARB"),
         dlsym(gl_hooker.libgl,"glXGetProcAddress")
@@ -182,6 +181,7 @@ add_hook(void* addr, void* dest, const char* name, size_t userdata_size, void* u
     
     gl_hooker.num_hooks++;
     gl_hooker.hooks = realloc(gl_hooker.hooks,sizeof(struct Hook) * gl_hooker.num_hooks);
+    //If name is NULL that means the hook should be registered for all of them
     if(name == NULL)
     {
         strcpy(gl_hooker.hooks[gl_hooker.num_hooks - 1].name,"\0");
@@ -198,19 +198,27 @@ add_hook(void* addr, void* dest, const char* name, size_t userdata_size, void* u
     memcpy(gl_hooker.hooks[gl_hooker.num_hooks - 1].userdata, userdata, userdata_size);
 }
 
+
 static bool
 install_inline_hook(void* src, void* dst)
 {
+    //Get system page size (typically 4096), this is because the address passed into mprotect() needs to be aligned to page boundaries
     long pagesize = sysconf(_SC_PAGE_SIZE);
+    //Absoulte jump to 64 bit address
     char jmp[] = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     memcpy(&jmp[6], &dst, sizeof(void*));
+
+    //Re-align the pointer passed into the SRC paramter to page boundaries
     char* p = (char*)src;
     p = (char*) ((size_t)p & ~(pagesize - 1));
+    //Change protections so we can write into it
     if(mprotect(p,pagesize,PROT_WRITE | PROT_READ | PROT_EXEC) == -1)
     {
         goto install_inline_hook_fail;
     }
+    //Install hook
     memcpy(src,jmp,sizeof(jmp));
+    //Change them back
     if(mprotect(p,pagesize,PROT_READ | PROT_EXEC) == -1)
     {
         goto install_inline_hook_fail;
@@ -226,8 +234,9 @@ install_inline_hook_fail:
 static void* 
 getprocaddress(const GLubyte* proc)
 {
-    long pagesize = sysconf(_SC_PAGE_SIZE);
 
+    //Get actual address
+    //Normal loader function is mangled up so we have to use syscalls.
     void* proc_address = dlsym(gl_hooker.libgl, (const char*) proc);
     
     if(proc_address == NULL)
@@ -238,12 +247,15 @@ getprocaddress(const GLubyte* proc)
 
     Hook* hook = NULL;
     
+    //Search for if the asked for function is registered
     int num_hooks = gl_hooker.num_hooks;
     for(int i = 0; i < num_hooks; i++)
     {
+        //If hook is supposed to be for all functions
         hook = &gl_hooker.hooks[i];
         if(strlen(gl_hooker.hooks[i].name) == 0)
         {
+            //Recursively add them all
             add_hook(proc_address,gl_hooker.hooks[i].dest,(const char*) proc,hook->userdata_size, hook->userdata);
             hook = &gl_hooker.hooks[gl_hooker.num_hooks - 1];
             break;
@@ -261,21 +273,18 @@ getprocaddress(const GLubyte* proc)
         return proc_address;
     }
     
-    
+    //Set original func of registered hook
+    //When its first registered the address is not known
     memcpy(&hook->src, &proc_address, sizeof(void*));
 
-    
+    //Generate our stub function
     void* relay_func = generate_relay_function(proc_address,hook->dest);
     if(relay_func == NULL)
     {
         goto hook_install_fail;
     }
-   
 
-    char* page = relay_func;
     hook->relay_addr = relay_func;
-    page = (char*) ((size_t)page & ~(pagesize - 1));
-    
 
     return relay_func;
 hook_install_fail:
@@ -291,20 +300,13 @@ hook_install_fail:
 static void* 
 generate_relay_function(void* src, void* dst)
 {   
-    //char save_args[] = {0x49, 0xBB, 0xA0, 0x16, 0xB6, 0xF7, 0xFF, 0x7F, 0x00, 0x00, 0x49, 0x89, 0x3B, 0x49, 0x89, 0x73, 0x08, 0x49, 0x89, 0x53, 0x10, 0x49, 0x89, 0x4B, 0x18, 0x4D, 0x89, 0x43, 0x20, 0x4D, 0x89, 0x4B, 0x28};
-    
-    
     char absolute_jump[] = {
-        0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x49, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x4D, 0x89, 0x13,
         0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //mov r10, addr
         0x41, 0xFF, 0xE2, //Jump
-        0xC3
     };
 
     char data[sizeof(absolute_jump)];
-    memset(&data[0], 0x90, sizeof(data));
+    memset(&data[0], 0x90, sizeof(data)); //Set NOOP
     char* func = mmap(NULL, sizeof(data), PROT_EXEC | PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
     if(func == MAP_FAILED)
@@ -313,12 +315,7 @@ generate_relay_function(void* src, void* dst)
         return NULL;
     }
 
-    actual_function = src;
-    void* actual_func_address = &actual_function;
-
-    memcpy(&absolute_jump[2], &src, sizeof(void*));
-    memcpy(&absolute_jump[10 + 2], &actual_func_address,sizeof(void*));
-    memcpy(&absolute_jump[23 + 2], &dst,sizeof(void*));
+    memcpy(&absolute_jump[2], &dst,sizeof(void*));
     memcpy(data, absolute_jump, sizeof(absolute_jump));
     memcpy(func,data,sizeof(data));
 

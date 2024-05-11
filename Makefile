@@ -1,6 +1,6 @@
 CC=gcc
 
-CCFLAGS=-c -Wall -fPIC -ggdb
+CCFLAGS=-c -Wall -fPIC -ggdb -Wall -Werror
 LDFLAGS=-shared
 OBJDIR=./obj
 
