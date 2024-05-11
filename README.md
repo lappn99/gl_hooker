@@ -42,7 +42,7 @@ my_glbindbuffer(GLenum target, GLuint buffer)
 
     //Original function is perserved so we can safely call it with out any side effects
     //However you do need to know the original function signature and function pointer typedef
-    PFNGLBINDBUFFERPROC glBindBuffer = (PFNGLBINDBUFFERPROC)glhooker_getoriginalfunction(handle);
+    PFNGLBINDBUFFERPROC glBindBuffer = (PFNGLBINDBUFFERPROC)glhooker_gethookoriginalfunction(handle);
 
     //Call original function
     glBindBuffer(target, buffer);

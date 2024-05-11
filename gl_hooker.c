@@ -143,7 +143,7 @@ glhooker_registerhook(const GLHookerRegisterHookDesc* desc)
 }
 
 void* 
-glhooker_getoriginalfunction(HookHandle handle)
+glhooker_gethookoriginalfunction(HookHandle handle)
 {
     if(handle == NULL)
     {

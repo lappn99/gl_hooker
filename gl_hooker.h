@@ -24,7 +24,7 @@ bool glhooker_registerhook(const GLHookerRegisterHookDesc*);
 //Get HOOK by hooked function NAME
 HookHandle glhooker_gethook(const char*);
 //Get original function ADDR from HOOK
-void* glhooker_getoriginalfunction(HookHandle);
+void* glhooker_gethookoriginalfunction(HookHandle);
 //Get USERDATA from HOOK
 void* glhooker_gethookuserdata(HookHandle);
 
