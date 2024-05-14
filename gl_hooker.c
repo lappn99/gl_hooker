@@ -33,6 +33,7 @@ typedef struct Hook
     void* src;
     void* dest;
     void* relay_addr;
+    size_t relay_func_len;
     char name[64];
     size_t userdata_size;
     void* userdata;
@@ -48,7 +49,7 @@ typedef struct GLHooker
 
 static bool install_inline_hook(void*, void*);
 static void* getprocaddress(const GLubyte*);
-static void* generate_relay_function(void*, void*);
+static void* generate_relay_function(void*, void*, size_t*);
 static void add_hook(void* addr, void* dest, const char* name, size_t, void*);
 
 static GLHooker gl_hooker;
@@ -113,6 +114,22 @@ glhooker_init(void)
 
 }
 
+
+void 
+glhooker_deinit(void)
+{
+    for(int i = 2; i < gl_hooker.num_hooks; i++) 
+    {
+        HookHandle hook = &gl_hooker.hooks[i];
+        free(hook->userdata);
+        if(munmap(hook->relay_addr, hook->relay_func_len) < 0)
+        {
+            GLHOOKER_SYSCALLERROR(munmap,"Could not unmap relay function");
+        }
+    }
+    free(gl_hooker.hooks);
+
+}
 
 char* 
 glhooker_gethookname(HookHandle handle)
@@ -276,15 +293,16 @@ getprocaddress(const GLubyte* proc)
     //Set original func of registered hook
     //When its first registered the address is not known
     memcpy(&hook->src, &proc_address, sizeof(void*));
-
+    size_t relay_func_len = 0;
     //Generate our stub function
-    void* relay_func = generate_relay_function(proc_address,hook->dest);
+    void* relay_func = generate_relay_function(proc_address,hook->dest, &relay_func_len);
     if(relay_func == NULL)
     {
         goto hook_install_fail;
     }
 
     hook->relay_addr = relay_func;
+    hook->relay_func_len = relay_func_len;
 
     return relay_func;
 hook_install_fail:
@@ -298,7 +316,7 @@ hook_install_fail:
 
 //Very cursed
 static void* 
-generate_relay_function(void* src, void* dst)
+generate_relay_function(void* src, void* dst,size_t* relay_func_size)
 {   
     char absolute_jump[] = {
         0x49, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //mov r10, addr
@@ -318,7 +336,7 @@ generate_relay_function(void* src, void* dst)
     memcpy(&absolute_jump[2], &dst,sizeof(void*));
     memcpy(data, absolute_jump, sizeof(absolute_jump));
     memcpy(func,data,sizeof(data));
-
+    *relay_func_size = sizeof(data);
     return func;
 
 }

@@ -28,6 +28,8 @@ void* glhooker_gethookoriginalfunction(HookHandle);
 //Get USERDATA from HOOK
 void* glhooker_gethookuserdata(HookHandle);
 
+void glhooker_deinit(void);
+
 
 #define GLHOOKER_GETHOOKADDR() (__builtin_return_address(0) - 0x2e)
 
